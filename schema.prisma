@@ -1,0 +1,195 @@
+// prisma/schema.prisma
+// ViralLift OS — Production Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── USERS ─────────────────────────────────────────────────────────────────────
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Autonomous settings
+  autonomousMode    Boolean   @default(false)
+  directorMode      Boolean   @default(false)  // Require approval before publish
+  active            Boolean   @default(true)
+
+  // Stats
+  cyclesCompleted   Int       @default(0)
+  totalPostsQueued  Int       @default(0)
+  lastCycleAt       DateTime?
+
+  // Platform OAuth tokens (encrypted at rest)
+  twitterAccessToken    String?
+  twitterAccessSecret   String?
+  linkedinAccessToken   String?
+  linkedinPersonId      String?
+  tiktokAccessToken     String?
+  tiktokOpenId          String?
+  youtubeAccessToken    String?
+  youtubeRefreshToken   String?
+
+  // Relations
+  companyProfile    CompanyProfile?
+  playbooks         Playbook[]
+  publishQueue      PublishQueue[]
+  notifications     Notification[]
+  cycleErrors       CycleError[]
+  campaigns         Campaign[]
+
+  @@map("users")
+}
+
+// ── COMPANY PROFILE ───────────────────────────────────────────────────────────
+model CompanyProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  niche          String
+  platforms      String[] // ["tiktok", "twitter", "linkedin", "youtube"]
+  postsPerCycle  Int      @default(5)
+  qualityGate    Int      @default(70)  // Min viral score 0-100
+  tone           String   @default("Bold & Aggressive")
+  targetAudience String?
+  brandVoice     String?
+  competitors    String[] // competitor handles to monitor
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("company_profiles")
+}
+
+// ── PLAYBOOKS ─────────────────────────────────────────────────────────────────
+model Playbook {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  weekTheme  String
+  topAngle   String
+  cycleNum   Int
+  raw        String   // Full JSON from AI
+
+  createdAt  DateTime @default(now())
+
+  posts      PublishQueue[]
+
+  @@map("playbooks")
+}
+
+// ── PUBLISH QUEUE ─────────────────────────────────────────────────────────────
+model PublishQueue {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playbookId  String?
+  playbook    Playbook? @relation(fields: [playbookId], references: [id])
+
+  // Content
+  platform    String   // twitter | linkedin | tiktok | youtube | reels
+  format      String   // Thread | Post | Script | Carousel
+  hook        String
+  content     String   @db.Text
+  imageUrls   String[]
+  videoUrl    String?
+  tags        String[]
+  viralScore  Int
+
+  // Scheduling
+  scheduledAt DateTime
+  publishedAt DateTime?
+  status      String   @default("queued") // queued | published | failed | draft | pending_approval
+  cycleNum    Int
+
+  // Platform response
+  platformId  String?  // Tweet ID, Post ID, etc.
+  error       String?
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  analytics   PostAnalytics?
+
+  @@map("publish_queue")
+}
+
+// ── POST ANALYTICS ─────────────────────────────────────────────────────────────
+model PostAnalytics {
+  id           String   @id @default(cuid())
+  postId       String   @unique
+  post         PublishQueue @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  impressions  Int      @default(0)
+  engagements  Int      @default(0)
+  likes        Int      @default(0)
+  shares       Int      @default(0)
+  comments     Int      @default(0)
+  clicks       Int      @default(0)
+  engagementRate Float  @default(0)
+
+  fetchedAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("post_analytics")
+}
+
+// ── CAMPAIGNS ─────────────────────────────────────────────────────────────────
+model Campaign {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  platform    String
+  status      String   @default("active") // active | paused | completed
+  stage       Int      @default(0)        // 0-4 pipeline stage
+  viralScore  Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("campaigns")
+}
+
+// ── NOTIFICATIONS ─────────────────────────────────────────────────────────────
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String   // approval_required | cycle_complete | publish_failed
+  message   String
+  data      String?  // JSON metadata
+  read      Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// ── CYCLE ERRORS ──────────────────────────────────────────────────────────────
+model CycleError {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cycleNum  Int
+  error     String
+  stack     String?  @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@map("cycle_errors")
+}

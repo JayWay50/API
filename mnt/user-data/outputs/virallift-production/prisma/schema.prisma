@@ -1,0 +1,158 @@
+// ViralLift Global OS — Database Schema
+// Run: npx prisma db push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USER & AUTH ──────────────────────────────────────────────────────────────
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  profile      Profile?
+  campaigns    Campaign[]
+  posts        Post[]
+  cycles       Cycle[]
+  connections  PlatformConnection[]
+}
+
+model Profile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  niche        String   @default("Creator Economy")
+  platforms    String[] // ["TikTok","Twitter/X","LinkedIn","YouTube","Reels"]
+  qualityGate  Int      @default(70)
+  postsPerCycle Int     @default(5)
+  cycleFreq    String   @default("24h") // 12h | 24h | 48h | weekly
+  autoMode     Boolean  @default(false)
+  timezone     String   @default("UTC")
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── PLATFORM CONNECTIONS ─────────────────────────────────────────────────────
+model PlatformConnection {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  platform     String   // tiktok | twitter | linkedin | youtube | reels
+  accessToken  String   // encrypted
+  refreshToken String?  // encrypted
+  tokenExpiry  DateTime?
+  accountId    String
+  accountName  String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, platform])
+}
+
+// ─── CAMPAIGNS ────────────────────────────────────────────────────────────────
+model Campaign {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  name        String
+  platform    String
+  niche       String
+  weekTheme   String?
+  insight     String?
+  powerMove   String?
+  avoidThis   String?
+  status      String   @default("active") // active | paused | completed
+  viralScore  Int?
+  stage       Int      @default(0) // 0-4
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  posts       Post[]
+  hooks       Hook[]
+}
+
+// ─── HOOKS ────────────────────────────────────────────────────────────────────
+model Hook {
+  id              String   @id @default(cuid())
+  campaignId      String?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id])
+  userId          String
+  platform        String
+  formula         String   // curiosity | contrarian | vulnerability | data_shock | story
+  hookText        String
+  bodyText        String?
+  ctaText         String?
+  predictedScore  Int
+  actualScore     Float?   // filled after post goes live & analytics pulled
+  createdAt       DateTime @default(now())
+}
+
+// ─── POSTS ────────────────────────────────────────────────────────────────────
+model Post {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  campaignId      String?
+  campaign        Campaign? @relation(fields: [campaignId], references: [id])
+  cycleId         String?
+  cycle           Cycle?    @relation(fields: [cycleId], references: [id])
+
+  platform        String    // tiktok | twitter | linkedin | youtube | reels
+  format          String    // Thread | Script | Post | Carousel | etc.
+  hookText        String
+  bodyText        String
+  ctaText         String?
+
+  status          String    @default("draft") // draft | queued | published | failed
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
+  platformPostId  String?   // ID returned by platform after publishing
+
+  // Analytics (populated after publish)
+  impressions     Int?
+  engagements     Int?
+  shares          Int?
+  clicks          Int?
+  viralScore      Int       @default(0)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// ─── AUTONOMOUS CYCLES ────────────────────────────────────────────────────────
+model Cycle {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  cycleNumber  Int
+  status       String   @default("running") // running | completed | failed
+  postsQueued  Int      @default(0)
+  postsPublished Int    @default(0)
+  avgScore     Float?
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  posts        Post[]
+}
+
+// ─── ANALYTICS SNAPSHOTS ─────────────────────────────────────────────────────
+model AnalyticsSnapshot {
+  id           String   @id @default(cuid())
+  userId       String
+  platform     String
+  date         DateTime @default(now())
+  impressions  Int      @default(0)
+  engagements  Int      @default(0)
+  shares       Int      @default(0)
+  followers    Int      @default(0)
+  topPostId    String?
+}
