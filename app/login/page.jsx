@@ -1,3 +1,4 @@
+"use client";
 export default function Login() {
   return (
     <main style={{fontFamily:'sans-serif',display:'flex',justifyContent:'center',alignItems:'center',minHeight:'100vh',background:'#f5f5f5'}}>
